@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Sheet Comparator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: #f6f8fb;
+            color: #1a1a1a;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        select,
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            background: #fafafa;
+        }
+
+        select:focus,
+        input:focus {
+            outline: none;
+            border-color: #6366f1;
+            background: white;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            margin-right: 10px;
+        }
+
+        .btn-primary {
+            background: #6366f1;
+            color: white;
+        }
+
+        .btn-download {
+            background: #10b981;
+            color: white;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            padding: 10px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+            overflow: auto;
+            max-height: 500px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th {
+            background: #f1f5f9;
+            position: sticky;
+            top: 0;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            text-align: center;
+        }
+
+        tr:nth-child(even) {
+            background: #fafafa;
+        }
+
+        .true {
+            color: green;
+            background: #ecfdf5;
+            font-weight: bold;
+        }
+
+        .false {
+            color: red;
+            background: #fef2f2;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>📊 Sheet Comparator</h1>
+        <div class="subtitle">Upload Excel files, compare data, and download results</div>
+
+        <div class="card">
+            <label>Select number of sheets:</label>
+            <select id="sheetCount">
+                <option value="2">2 Sheets</option>
+                <option value="3">3 Sheets</option>
+            </select>
+
+            <div id="uploadArea"></div>
+
+            <button class="btn btn-primary" onclick="processFiles()">Compare</button>
+            <button class="btn btn-download" onclick="downloadExcel()">Download Excel</button>
+        </div>
+
+        <div class="table-container">
+            <div id="output"></div>
+        </div>
+    </div>
+
+    <script>
+        let filesData = [];
+        let finalData = [];
+
+        document.getElementById("sheetCount").addEventListener("change", createInputs);
+        createInputs();
+
+        function createInputs() {
+            const count = document.getElementById("sheetCount").value;
+            const area = document.getElementById("uploadArea");
+            area.innerHTML = "";
+            filesData = [];
+
+            for (let i = 0; i < count; i++) {
+                let input = document.createElement("input");
+                input.type = "file";
+                input.accept = ".xlsx,.csv";
+                input.onchange = (e) => readFile(e, i);
+
+                area.appendChild(document.createTextNode(`Upload Sheet ${i + 1}:`));
+                area.appendChild(input);
+            }
+        }
+
+        function readFile(e, index) {
+            const reader = new FileReader();
+            reader.onload = function (evt) {
+                const wb = XLSX.read(new Uint8Array(evt.target.result), { type: "array" });
+                const sheet = wb.Sheets[wb.SheetNames[0]];
+                filesData[index] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            };
+            reader.readAsArrayBuffer(e.target.files[0]);
+        }
+
+        function isValid(v) {
+            return v !== undefined && v !== null && v !== "";
+        }
+
+        function processFiles() {
+            let map = {};
+            finalData = [];
+
+            // Map rows by Column A
+            filesData.forEach((sheet, i) => {
+                sheet.forEach(row => {
+                    let key = row[0];
+                    if (!isValid(key)) return;
+
+                    if (!map[key]) map[key] = [];
+                    map[key][i] = row;
+                });
+            });
+
+            // Find max columns
+            let maxCols = 0;
+            filesData.forEach(sheet => {
+                sheet.forEach(row => {
+                    if (row.length > maxCols) maxCols = row.length;
+                });
+            });
+
+            let html = "<table><tr><th>Key</th>";
+            let header = ["Key"];
+
+            // Sheet headers
+            filesData.forEach((_, i) => {
+                html += `<th colspan="${maxCols - 1}">Sheet ${i + 1}</th>`;
+                for (let c = 1; c < maxCols; c++) {
+                    header.push(`S${i + 1}-Col${c}`);
+                }
+            });
+
+            // Comparison header
+            html += `<th colspan="${maxCols - 1}">Comparison</th></tr>`;
+            for (let c = 1; c < maxCols; c++) {
+                header.push(`Comp-Col${c}`);
+            }
+
+            finalData.push(header);
+
+            // Build rows
+            Object.keys(map).forEach(key => {
+                let rows = map[key];
+                let rowData = [key];
+
+                html += `<tr><td>${key}</td>`;
+
+                // Sheet data (STRICT)
+                filesData.forEach((_, idx) => {
+                    let r = rows[idx];
+                    for (let c = 1; c < maxCols; c++) {
+                        let val = r ? (r[c] ?? "") : "";
+                        html += `<td>${val}</td>`;
+                        rowData.push(val);
+                    }
+                });
+
+                // Compare Sheet1 vs Sheet2
+                for (let c = 1; c < maxCols; c++) {
+                    let v1 = rows[0] ? rows[0][c] : null;
+                    let v2 = rows[1] ? rows[1][c] : null;
+
+                    let result = "";
+
+                    if (isValid(v1) && isValid(v2)) {
+                        result = v1 === v2;
+                        html += `<td class="${result ? 'true' : 'false'}">${result}</td>`;
+                    } else {
+                        html += `<td></td>`;
+                    }
+
+                    rowData.push(result);
+                }
+
+                html += "</tr>";
+                finalData.push(rowData);
+            });
+
+            html += "</table>";
+            document.getElementById("output").innerHTML = html;
+        }
+
+        function downloadExcel() {
+            if (finalData.length === 0) {
+                alert("No data to download!");
+                return;
+            }
+
+            const ws = XLSX.utils.aoa_to_sheet(finalData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Result");
+            XLSX.writeFile(wb, "comparison.xlsx");
+        }
+    </script>
+
+</body>
+
+</html>
